@@ -1,14 +1,27 @@
 package com.finalproject.service;
 
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import javax.imageio.ImageIO;
 
 public class PDFToDOCConverter {
 
@@ -34,6 +47,16 @@ public class PDFToDOCConverter {
       boolean isSlideFormat = totalPages > 1 && totalPages <= 50;
 
       for (int pageNum = 1; pageNum <= totalPages; pageNum++) {
+        System.out.println("[PDFToDOCConverter] Đang xử lý trang " + pageNum + "/" + totalPages);
+
+        if (pageNum > 1 && isSlideFormat) {
+          XWPFParagraph pageBreakPara = docxDocument.createParagraph();
+          XWPFRun pageBreakRun = pageBreakPara.createRun();
+          pageBreakRun.addBreak(org.apache.poi.xwpf.usermodel.BreakType.PAGE);
+        }
+
+        PDPage page = document.getPage(pageNum - 1);
+
         FormattedTextStripper formattedStripper = null;
         List<FormattedTextStripper.FormattedText> formattedTexts = null;
 
@@ -56,14 +79,38 @@ public class PDFToDOCConverter {
         PDFTextStripper stripper = new PDFTextStripper();
         stripper.setStartPage(pageNum);
         stripper.setEndPage(pageNum);
-        String pageText = stripper.getText(document);
+        String pageText = null;
+        try {
+          pageText = stripper.getText(document);
+        } catch (Exception e) {
+          System.out
+              .println("[PDFToDOCConverter] Không thể trích xuất text từ trang " + pageNum + ": " + e.getMessage());
+          pageText = "";
+        }
 
-        if (pageText != null && !pageText.trim().isEmpty()) {
-          if (pageNum > 1 && isSlideFormat) {
-            XWPFParagraph pageBreakPara = docxDocument.createParagraph();
-            XWPFRun pageBreakRun = pageBreakPara.createRun();
-            pageBreakRun.addBreak(org.apache.poi.xwpf.usermodel.BreakType.PAGE);
+        List<PDImageXObject> images = extractImagesFromPage(page);
+        System.out.println("[PDFToDOCConverter] Trang " + pageNum + ": Tìm thấy " + images.size() + " hình ảnh");
 
+        boolean hasText = pageText != null && !pageText.trim().isEmpty();
+        boolean isScannedPDF = !hasText && images.isEmpty();
+
+        if (isScannedPDF) {
+          System.out.println("[PDFToDOCConverter] Phát hiện PDF scan - render toàn bộ trang thành hình ảnh");
+          try {
+            BufferedImage pageImage = renderPageAsImage(document, pageNum - 1);
+            if (pageImage != null) {
+              insertBufferedImageToDocument(docxDocument, pageImage, "Trang " + pageNum);
+            }
+          } catch (Exception e) {
+            System.err
+                .println("[PDFToDOCConverter] Lỗi khi render trang " + pageNum + " thành hình ảnh: " + e.getMessage());
+            XWPFParagraph paragraph = docxDocument.createParagraph();
+            XWPFRun run = paragraph.createRun();
+            run.setText("(Không thể xử lý trang " + pageNum + " - có thể là PDF scan)");
+            run.setItalic(true);
+          }
+        } else {
+          if (isSlideFormat && hasText) {
             String firstLine = pageText.split("\n")[0].trim();
             if (firstLine.length() > 0 && firstLine.length() < 100) {
               XWPFParagraph titlePara = docxDocument.createParagraph();
@@ -75,12 +122,23 @@ public class PDFToDOCConverter {
             }
           }
 
-          if (formattedTexts != null && !formattedTexts.isEmpty()) {
-            System.out.println("[PDFToDOCConverter] Sử dụng format từ PDF");
-            processFormattedTextWithLines(docxDocument, formattedTexts, pageText);
-          } else {
-            System.out.println("[PDFToDOCConverter] Sử dụng text thường (không có format)");
-            processPlainText(docxDocument, pageText);
+          if (!images.isEmpty()) {
+            insertImagesToDocument(docxDocument, images);
+          }
+
+          if (hasText) {
+            if (formattedTexts != null && !formattedTexts.isEmpty()) {
+              System.out.println("[PDFToDOCConverter] Sử dụng format từ PDF");
+              processFormattedTextWithLines(docxDocument, formattedTexts, pageText);
+            } else {
+              System.out.println("[PDFToDOCConverter] Sử dụng text thường (không có format)");
+              processPlainText(docxDocument, pageText);
+            }
+          } else if (!images.isEmpty()) {
+            XWPFParagraph paragraph = docxDocument.createParagraph();
+            XWPFRun run = paragraph.createRun();
+            run.setText("(Trang " + pageNum + " chỉ có hình ảnh, không có text)");
+            run.setItalic(true);
           }
         }
       }
@@ -136,21 +194,30 @@ public class PDFToDOCConverter {
     }
 
     int globalCharIndex = 0;
+    boolean inTable = false;
+    java.util.List<String> tableRows = new ArrayList<>();
 
     for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      String line = lines[lineIdx].trim();
+      String originalLine = lines[lineIdx];
+      String line = originalLine.trim();
 
       if (line.isEmpty()) {
+        if (inTable && !tableRows.isEmpty()) {
+          createTableFromRows(docxDocument, tableRows);
+          tableRows.clear();
+          inTable = false;
+        }
+
         if (lineIdx > 0 && lineIdx < lines.length - 1) {
           boolean hasContentBefore = false;
           boolean hasContentAfter = false;
-          for (int j = lineIdx - 1; j >= 0 && j >= lineIdx - 2; j--) {
+          for (int j = lineIdx - 1; j >= 0 && j >= lineIdx - 3; j--) {
             if (!lines[j].trim().isEmpty()) {
               hasContentBefore = true;
               break;
             }
           }
-          for (int j = lineIdx + 1; j < lines.length && j <= lineIdx + 2; j++) {
+          for (int j = lineIdx + 1; j < lines.length && j <= lineIdx + 3; j++) {
             if (!lines[j].trim().isEmpty()) {
               hasContentAfter = true;
               break;
@@ -158,20 +225,46 @@ public class PDFToDOCConverter {
           }
           if (hasContentBefore && hasContentAfter) {
             XWPFParagraph emptyPara = docxDocument.createParagraph();
+            emptyPara.setSpacingAfter(120);
             XWPFRun emptyRun = emptyPara.createRun();
             emptyRun.setText("");
           }
         }
-        globalCharIndex += line.length() + 1;
+        globalCharIndex += originalLine.length() + 1;
         continue;
       }
 
+      if (isTableRow(line)) {
+        if (!inTable) {
+          inTable = true;
+          tableRows.clear();
+        }
+        tableRows.add(line);
+        globalCharIndex += originalLine.length() + 1;
+        continue;
+      } else if (inTable && !tableRows.isEmpty()) {
+        createTableFromRows(docxDocument, tableRows);
+        tableRows.clear();
+        inTable = false;
+      }
+
       XWPFParagraph paragraph = docxDocument.createParagraph();
+
+      HeadingInfo headingInfo = detectHeading(line);
+      if (headingInfo != null && headingInfo.alignment != null) {
+        paragraph.setAlignment(headingInfo.alignment);
+      }
+
       XWPFRun currentRun = null;
       boolean currentBold = false;
       boolean currentItalic = false;
       boolean currentUnderline = false;
       StringBuilder currentTextBuffer = new StringBuilder();
+
+      int fontSize = headingInfo != null ? headingInfo.fontSize : 11;
+
+      paragraph.setSpacingBefore(0);
+      paragraph.setSpacingAfter(0);
 
       for (int i = 0; i < line.length(); i++) {
         int charPos = globalCharIndex + i;
@@ -180,6 +273,10 @@ public class PDFToDOCConverter {
         boolean isBold = format != null ? format.isBold() : false;
         boolean isItalic = format != null ? format.isItalic() : false;
         boolean isUnderline = format != null ? format.isUnderline() : false;
+
+        if (headingInfo != null) {
+          isBold = true;
+        }
 
         char c = line.charAt(i);
 
@@ -200,6 +297,7 @@ public class PDFToDOCConverter {
 
           currentRun.setBold(currentBold);
           currentRun.setItalic(currentItalic);
+          currentRun.setFontSize(fontSize);
           if (currentUnderline) {
             currentRun.setUnderline(org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE);
           }
@@ -212,131 +310,46 @@ public class PDFToDOCConverter {
         currentRun.setText(currentTextBuffer.toString());
       }
 
-      globalCharIndex += line.length() + 1;
-    }
-  }
-
-  private void processFormattedText(XWPFDocument docxDocument,
-      List<FormattedTextStripper.FormattedText> formattedTexts) {
-    if (formattedTexts == null || formattedTexts.isEmpty()) {
-      return;
-    }
-
-    XWPFParagraph currentParagraph = docxDocument.createParagraph();
-    XWPFRun currentRun = null;
-    boolean currentBold = false;
-    boolean currentItalic = false;
-    boolean currentUnderline = false;
-    StringBuilder currentTextBuffer = new StringBuilder();
-
-    for (int i = 0; i < formattedTexts.size(); i++) {
-      FormattedTextStripper.FormattedText formattedText = formattedTexts.get(i);
-      String text = formattedText.getText();
-
-      if (text == null) {
-        continue;
+      if (headingInfo != null && headingInfo.addSpacingAfter) {
+        paragraph.setSpacingAfter(240);
+        paragraph.setSpacingBefore(120);
+      } else {
+        paragraph.setSpacingAfter(60);
       }
 
-      boolean hasNewline = text.contains("\n") || text.contains("\r\n") || text.contains("\r");
-
-      if (hasNewline) {
-        if (currentRun != null && currentTextBuffer.length() > 0) {
-          currentRun.setText(currentTextBuffer.toString());
-          currentTextBuffer.setLength(0);
-        }
-
-        String[] parts = text.split("[\r\n]+", -1);
-        for (int j = 0; j < parts.length; j++) {
-          String part = parts[j];
-
-          if (!part.isEmpty()) {
-            if (currentRun == null ||
-                formattedText.isBold() != currentBold ||
-                formattedText.isItalic() != currentItalic ||
-                formattedText.isUnderline() != currentUnderline) {
-
-              if (currentRun != null && currentTextBuffer.length() > 0) {
-                currentRun.setText(currentTextBuffer.toString());
-                currentTextBuffer.setLength(0);
-              }
-
-              currentRun = currentParagraph.createRun();
-              currentBold = formattedText.isBold();
-              currentItalic = formattedText.isItalic();
-              currentUnderline = formattedText.isUnderline();
-
-              currentRun.setBold(currentBold);
-              currentRun.setItalic(currentItalic);
-              if (currentUnderline) {
-                currentRun.setUnderline(org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE);
-              }
-            }
-
-            currentTextBuffer.append(part);
-          }
-
-          if (j < parts.length - 1 || (i < formattedTexts.size() - 1)) {
-            if (currentRun != null && currentTextBuffer.length() > 0) {
-              currentRun.setText(currentTextBuffer.toString());
-              currentTextBuffer.setLength(0);
-            }
-
-            currentParagraph = docxDocument.createParagraph();
-            currentRun = null;
-          }
-        }
-        continue;
-      }
-
-      if (currentRun == null ||
-          formattedText.isBold() != currentBold ||
-          formattedText.isItalic() != currentItalic ||
-          formattedText.isUnderline() != currentUnderline) {
-
-        if (currentRun != null && currentTextBuffer.length() > 0) {
-          currentRun.setText(currentTextBuffer.toString());
-          currentTextBuffer.setLength(0);
-        }
-
-        currentRun = currentParagraph.createRun();
-        currentBold = formattedText.isBold();
-        currentItalic = formattedText.isItalic();
-        currentUnderline = formattedText.isUnderline();
-
-        currentRun.setBold(currentBold);
-        currentRun.setItalic(currentItalic);
-        if (currentUnderline) {
-          currentRun.setUnderline(org.apache.poi.xwpf.usermodel.UnderlinePatterns.SINGLE);
-        }
-      }
-
-      if (currentRun != null && !text.isEmpty()) {
-        currentTextBuffer.append(text);
-      }
+      globalCharIndex += originalLine.length() + 1;
     }
 
-    if (currentRun != null && currentTextBuffer.length() > 0) {
-      currentRun.setText(currentTextBuffer.toString());
+    if (inTable && !tableRows.isEmpty()) {
+      createTableFromRows(docxDocument, tableRows);
     }
   }
 
   private void processPlainText(XWPFDocument docxDocument, String pageText) {
-    String[] lines = pageText.split("\n");
+    String[] lines = pageText.split("\n", -1);
+    boolean inTable = false;
+    java.util.List<String> tableRows = new ArrayList<>();
 
     for (int i = 0; i < lines.length; i++) {
       String line = lines[i].trim();
 
       if (line.isEmpty()) {
+        if (inTable && !tableRows.isEmpty()) {
+          createTableFromRows(docxDocument, tableRows);
+          tableRows.clear();
+          inTable = false;
+        }
+
         if (i > 0 && i < lines.length - 1) {
           boolean hasContentBefore = false;
           boolean hasContentAfter = false;
-          for (int j = i - 1; j >= 0 && j >= i - 2; j--) {
+          for (int j = i - 1; j >= 0 && j >= i - 3; j--) {
             if (!lines[j].trim().isEmpty()) {
               hasContentBefore = true;
               break;
             }
           }
-          for (int j = i + 1; j < lines.length && j <= i + 2; j++) {
+          for (int j = i + 1; j < lines.length && j <= i + 3; j++) {
             if (!lines[j].trim().isEmpty()) {
               hasContentAfter = true;
               break;
@@ -344,6 +357,7 @@ public class PDFToDOCConverter {
           }
           if (hasContentBefore && hasContentAfter) {
             XWPFParagraph emptyPara = docxDocument.createParagraph();
+            emptyPara.setSpacingAfter(120);
             XWPFRun emptyRun = emptyPara.createRun();
             emptyRun.setText("");
           }
@@ -351,11 +365,322 @@ public class PDFToDOCConverter {
         continue;
       }
 
-      XWPFParagraph paragraph = docxDocument.createParagraph();
-      XWPFRun run = paragraph.createRun();
+      if (isTableRow(line)) {
+        if (!inTable) {
+          inTable = true;
+          tableRows.clear();
+        }
+        tableRows.add(line);
+        continue;
+      } else if (inTable && !tableRows.isEmpty()) {
+        createTableFromRows(docxDocument, tableRows);
+        tableRows.clear();
+        inTable = false;
+      }
 
-      String cleanText = line.replaceAll("\\s+", " ");
+      XWPFParagraph paragraph = docxDocument.createParagraph();
+
+      paragraph.setSpacingBefore(0);
+      paragraph.setSpacingAfter(0);
+
+      HeadingInfo headingInfo = detectHeading(line);
+      if (headingInfo != null && headingInfo.alignment != null) {
+        paragraph.setAlignment(headingInfo.alignment);
+      }
+
+      XWPFRun run = paragraph.createRun();
+      String cleanText = line;
+
+      if (headingInfo == null) {
+        cleanText = cleanText.replaceAll("\\s+", " ");
+      }
+
+      int fontSize = headingInfo != null ? headingInfo.fontSize : 11;
+      run.setFontSize(fontSize);
+      if (headingInfo != null) {
+        run.setBold(true);
+      }
       run.setText(cleanText);
+
+      if (headingInfo != null && headingInfo.addSpacingAfter) {
+        paragraph.setSpacingAfter(240);
+        paragraph.setSpacingBefore(120);
+      } else {
+        paragraph.setSpacingAfter(60);
+      }
+    }
+
+    if (inTable && !tableRows.isEmpty()) {
+      createTableFromRows(docxDocument, tableRows);
+    }
+  }
+
+  private List<PDImageXObject> extractImagesFromPage(PDPage page) {
+    List<PDImageXObject> images = new ArrayList<>();
+    try {
+      PDResources resources = page.getResources();
+      if (resources == null) {
+        return images;
+      }
+
+      Iterable<COSName> xObjectNames = resources.getXObjectNames();
+      if (xObjectNames == null) {
+        return images;
+      }
+
+      for (COSName xObjectName : xObjectNames) {
+        PDXObject xObject = resources.getXObject(xObjectName);
+        if (xObject instanceof PDImageXObject) {
+          PDImageXObject image = (PDImageXObject) xObject;
+          images.add(image);
+        }
+      }
+    } catch (IOException e) {
+      System.err.println("[PDFToDOCConverter] Lỗi khi trích xuất hình ảnh: " + e.getMessage());
+    }
+    return images;
+  }
+
+  private BufferedImage renderPageAsImage(PDDocument document, int pageIndex) {
+    try {
+      PDFRenderer renderer = new PDFRenderer(document);
+      BufferedImage image = renderer.renderImageWithDPI(pageIndex, 150);
+      System.out.println("[PDFToDOCConverter] Đã render trang " + (pageIndex + 1) + " thành hình ảnh: " +
+          image.getWidth() + "x" + image.getHeight());
+      return image;
+    } catch (Exception e) {
+      System.err.println("[PDFToDOCConverter] Lỗi khi render trang thành hình ảnh: " + e.getMessage());
+      return null;
+    }
+  }
+
+  private void insertBufferedImageToDocument(XWPFDocument docxDocument, BufferedImage image, String caption) {
+    try {
+      XWPFParagraph imagePara = docxDocument.createParagraph();
+      imagePara.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+      XWPFRun imageRun = imagePara.createRun();
+
+      int width = image.getWidth();
+      int height = image.getHeight();
+
+      int maxWidth = 600;
+      int maxHeight = 800;
+
+      if (width > maxWidth || height > maxHeight) {
+        double scale = Math.min((double) maxWidth / width, (double) maxHeight / height);
+        width = (int) (width * scale);
+        height = (int) (height * scale);
+      }
+
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      ImageIO.write(image, "png", baos);
+      byte[] imageBytes = baos.toByteArray();
+
+      imageRun.addPicture(
+          new ByteArrayInputStream(imageBytes),
+          org.apache.poi.xwpf.usermodel.XWPFDocument.PICTURE_TYPE_PNG,
+          caption,
+          Units.toEMU(width),
+          Units.toEMU(height));
+
+      System.out.println("[PDFToDOCConverter] Đã chèn hình ảnh render: " + width + "x" + height);
+
+    } catch (Exception e) {
+      System.err.println("[PDFToDOCConverter] Lỗi khi chèn hình ảnh render vào DOCX: " + e.getMessage());
+    }
+  }
+
+  private void insertImagesToDocument(XWPFDocument docxDocument, List<PDImageXObject> images) {
+    for (PDImageXObject image : images) {
+      try {
+        XWPFParagraph imagePara = docxDocument.createParagraph();
+        imagePara.setAlignment(org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER);
+        XWPFRun imageRun = imagePara.createRun();
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        int maxWidth = 500;
+        int maxHeight = 400;
+
+        if (width > maxWidth || height > maxHeight) {
+          double scale = Math.min((double) maxWidth / width, (double) maxHeight / height);
+          width = (int) (width * scale);
+          height = (int) (height * scale);
+        }
+
+        BufferedImage bufferedImage = image.getImage();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        String imageType = image.getSuffix();
+        if (imageType == null || imageType.isEmpty()) {
+          imageType = "png";
+        }
+
+        String formatName = "png";
+        int pictureType = org.apache.poi.xwpf.usermodel.XWPFDocument.PICTURE_TYPE_PNG;
+
+        if ("jpg".equalsIgnoreCase(imageType) || "jpeg".equalsIgnoreCase(imageType)) {
+          formatName = "jpg";
+          pictureType = org.apache.poi.xwpf.usermodel.XWPFDocument.PICTURE_TYPE_JPEG;
+        } else if ("png".equalsIgnoreCase(imageType)) {
+          formatName = "png";
+          pictureType = org.apache.poi.xwpf.usermodel.XWPFDocument.PICTURE_TYPE_PNG;
+        }
+
+        ImageIO.write(bufferedImage, formatName, baos);
+        byte[] imageBytes = baos.toByteArray();
+
+        imageRun.addPicture(
+            new ByteArrayInputStream(imageBytes),
+            pictureType,
+            "image",
+            Units.toEMU(width),
+            Units.toEMU(height));
+
+        System.out.println("[PDFToDOCConverter] Đã chèn hình ảnh: " + width + "x" + height + " (" + imageType + ")");
+
+      } catch (Exception e) {
+        System.err.println("[PDFToDOCConverter] Lỗi khi chèn hình ảnh vào DOCX: " + e.getMessage());
+      }
+    }
+  }
+
+  private boolean isTableRow(String line) {
+    if (line == null || line.trim().isEmpty()) {
+      return false;
+    }
+
+    int pipeCount = 0;
+    int tabCount = 0;
+    for (char c : line.toCharArray()) {
+      if (c == '|') {
+        pipeCount++;
+      } else if (c == '\t') {
+        tabCount++;
+      }
+    }
+
+    return (pipeCount >= 2) || (tabCount >= 2);
+  }
+
+  private void createTableFromRows(XWPFDocument docxDocument, List<String> rows) {
+    if (rows.isEmpty()) {
+      return;
+    }
+
+    try {
+      List<List<String>> tableData = new ArrayList<>();
+      int maxCols = 0;
+
+      for (String row : rows) {
+        List<String> cells = new ArrayList<>();
+
+        if (row.contains("|")) {
+          String[] parts = row.split("\\|", -1);
+          for (String part : parts) {
+            cells.add(part.trim());
+          }
+        } else if (row.contains("\t")) {
+          String[] parts = row.split("\t", -1);
+          for (String part : parts) {
+            cells.add(part.trim());
+          }
+        } else {
+          cells.add(row.trim());
+        }
+
+        tableData.add(cells);
+        maxCols = Math.max(maxCols, cells.size());
+      }
+
+      if (maxCols == 0) {
+        return;
+      }
+
+      org.apache.poi.xwpf.usermodel.XWPFTable table = docxDocument.createTable(rows.size(), maxCols);
+      table.setWidth("100%");
+
+      for (int i = 0; i < tableData.size() && i < rows.size(); i++) {
+        List<String> cells = tableData.get(i);
+        org.apache.poi.xwpf.usermodel.XWPFTableRow tableRow = table.getRow(i);
+
+        for (int j = 0; j < maxCols; j++) {
+          org.apache.poi.xwpf.usermodel.XWPFTableCell cell = tableRow.getCell(j);
+          if (cell == null) {
+            cell = tableRow.createCell();
+          }
+
+          String cellText = (j < cells.size()) ? cells.get(j) : "";
+          cell.setText(cellText);
+
+          if (i == 0) {
+            org.apache.poi.xwpf.usermodel.XWPFParagraph cellPara = cell.getParagraphs().get(0);
+            if (!cellPara.getRuns().isEmpty()) {
+              cellPara.getRuns().get(0).setBold(true);
+            }
+          }
+        }
+      }
+
+      System.out.println("[PDFToDOCConverter] Đã tạo bảng với " + rows.size() + " hàng và " + maxCols + " cột");
+    } catch (Exception e) {
+      System.err.println("[PDFToDOCConverter] Lỗi khi tạo bảng: " + e.getMessage());
+    }
+  }
+
+  private HeadingInfo detectHeading(String line) {
+    if (line == null || line.trim().isEmpty()) {
+      return null;
+    }
+
+    String trimmed = line.trim();
+
+    if (trimmed.matches("^CHƯƠNG\\s+\\d+.*")) {
+      return new HeadingInfo(18,
+          org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER, true);
+    }
+
+    if (trimmed.matches("^\\d+\\.\\s+.*")) {
+      String[] parts = trimmed.split("\\.", 2);
+      if (parts.length > 0) {
+        String numPart = parts[0].trim();
+        int level = numPart.split("\\.").length;
+        if (level == 1) {
+          return new HeadingInfo(16, null, true);
+        } else if (level == 2) {
+          return new HeadingInfo(14, null, true);
+        } else if (level >= 3) {
+          return new HeadingInfo(12, null, true);
+        }
+      }
+    }
+
+    if (trimmed.matches("^[A-Z][A-Z\\s]+$") && trimmed.length() < 50 &&
+        !trimmed.contains(":") && !trimmed.contains(".")) {
+      return new HeadingInfo(14,
+          org.apache.poi.xwpf.usermodel.ParagraphAlignment.CENTER, true);
+    }
+
+    if (trimmed.startsWith("#") || trimmed.startsWith("*") ||
+        trimmed.matches("^[-•]\\s+.*")) {
+      return null;
+    }
+
+    return null;
+  }
+
+  private static class HeadingInfo {
+    int fontSize;
+    org.apache.poi.xwpf.usermodel.ParagraphAlignment alignment;
+    boolean addSpacingAfter;
+
+    HeadingInfo(int fontSize,
+        org.apache.poi.xwpf.usermodel.ParagraphAlignment alignment,
+        boolean addSpacingAfter) {
+      this.fontSize = fontSize;
+      this.alignment = alignment;
+      this.addSpacingAfter = addSpacingAfter;
     }
   }
 }
