@@ -14,7 +14,7 @@ public class DatabaseConnection {
     try {
       Class.forName(config.getDriver());
     } catch (ClassNotFoundException e) {
-      System.err.println("[DatabaseConnection] Lỗi khi load JDBC driver: " + e.getMessage());
+      System.err.println("[DatabaseConnection] Error loading JDBC driver: " + e.getMessage());
       e.printStackTrace();
     }
   }

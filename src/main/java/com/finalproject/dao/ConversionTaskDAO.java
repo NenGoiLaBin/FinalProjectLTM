@@ -32,7 +32,7 @@ public class ConversionTaskDAO {
         }
       }
     } catch (SQLException e) {
-      System.err.println("[ConversionTaskDAO] Lỗi khi tạo task: " + e.getMessage());
+      System.err.println("[ConversionTaskDAO] Error creating task: " + e.getMessage());
       e.printStackTrace();
     }
     return -1;
@@ -52,7 +52,7 @@ public class ConversionTaskDAO {
         tasks.add(task);
       }
     } catch (SQLException e) {
-      System.err.println("[ConversionTaskDAO] Lỗi khi lấy danh sách task: " + e.getMessage());
+      System.err.println("[ConversionTaskDAO] Error getting task list: " + e.getMessage());
       e.printStackTrace();
     }
     return tasks;
@@ -70,7 +70,7 @@ public class ConversionTaskDAO {
         return mapResultSetToTask(rs);
       }
     } catch (SQLException e) {
-      System.err.println("[ConversionTaskDAO] Lỗi khi lấy task theo ID: " + e.getMessage());
+      System.err.println("[ConversionTaskDAO] Error getting task by ID: " + e.getMessage());
       e.printStackTrace();
     }
     return null;
@@ -88,7 +88,7 @@ public class ConversionTaskDAO {
         tasks.add(task);
       }
     } catch (SQLException e) {
-      System.err.println("[ConversionTaskDAO] Lỗi khi lấy danh sách task đang chờ: " + e.getMessage());
+      System.err.println("[ConversionTaskDAO] Error getting pending tasks: " + e.getMessage());
       e.printStackTrace();
     }
     return tasks;
@@ -112,7 +112,7 @@ public class ConversionTaskDAO {
 
       return stmt.executeUpdate() > 0;
     } catch (SQLException e) {
-      System.err.println("[ConversionTaskDAO] Lỗi khi cập nhật task: " + e.getMessage());
+      System.err.println("[ConversionTaskDAO] Error updating task: " + e.getMessage());
       e.printStackTrace();
     }
     return false;

@@ -35,7 +35,7 @@ public class LoginServlet extends HttpServlet {
     String username = request.getParameter("username");
     String password = request.getParameter("password");
 
-    System.out.println("[LoginServlet] Nhận yêu cầu đăng nhập từ: " + username);
+    System.out.println("[LoginServlet] Login request from: " + username);
 
     if (username == null || password == null || username.trim().isEmpty() || password.trim().isEmpty()) {
       request.setAttribute("error", "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu");
@@ -49,15 +49,15 @@ public class LoginServlet extends HttpServlet {
       if (user != null) {
         HttpSession session = request.getSession();
         session.setAttribute("user", user);
-        System.out.println("[LoginServlet] Đăng nhập thành công, chuyển đến dashboard");
+        System.out.println("[LoginServlet] Login successful, redirecting to dashboard");
         response.sendRedirect("dashboard.jsp");
       } else {
-        System.out.println("[LoginServlet] Đăng nhập thất bại");
+        System.out.println("[LoginServlet] Login failed");
         request.setAttribute("error", "Tên đăng nhập hoặc mật khẩu không đúng");
         request.getRequestDispatcher("login.jsp").forward(request, response);
       }
     } catch (Exception e) {
-      System.err.println("[LoginServlet] Lỗi khi xử lý đăng nhập: " + e.getMessage());
+      System.err.println("[LoginServlet] Error processing login: " + e.getMessage());
       e.printStackTrace();
       request.setAttribute("error", "Có lỗi xảy ra khi đăng nhập. Vui lòng thử lại sau.");
       request.getRequestDispatcher("login.jsp").forward(request, response);

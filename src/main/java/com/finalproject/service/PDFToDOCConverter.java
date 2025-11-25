@@ -24,10 +24,10 @@ public class PDFToDOCConverter {
     }
 
     try {
-      System.out.println("[PDFToDOCConverter] Đang đọc file PDF: " + pdfFilePath);
+      System.out.println("[PDFToDOCConverter] Reading PDF file: " + pdfFilePath);
       PDDocument document = PDDocument.load(pdfFile);
       int totalPages = document.getNumberOfPages();
-      System.out.println("[PDFToDOCConverter] Số trang PDF: " + totalPages);
+      System.out.println("[PDFToDOCConverter] Total PDF pages: " + totalPages);
 
       XWPFDocument docxDocument = new XWPFDocument();
 
@@ -46,10 +46,10 @@ public class PDFToDOCConverter {
           formattedStripper.getText(document);
           formattedTexts = formattedStripper.getFormattedTexts();
 
-          System.out.println("[PDFToDOCConverter] Trang " + pageNum + ": Trích xuất được " +
-              (formattedTexts != null ? formattedTexts.size() : 0) + " ký tự có format");
+          System.out.println("[PDFToDOCConverter] Page " + pageNum + ": Extracted " +
+              (formattedTexts != null ? formattedTexts.size() : 0) + " formatted characters");
         } catch (Exception e) {
-          System.out.println("[PDFToDOCConverter] Không thể trích xuất format, sử dụng text thường: " + e.getMessage());
+          System.out.println("[PDFToDOCConverter] Cannot extract format, using plain text: " + e.getMessage());
           formattedTexts = null;
         }
 
@@ -76,10 +76,10 @@ public class PDFToDOCConverter {
           }
 
           if (formattedTexts != null && !formattedTexts.isEmpty()) {
-            System.out.println("[PDFToDOCConverter] Sử dụng format từ PDF");
+            System.out.println("[PDFToDOCConverter] Using format from PDF");
             processFormattedTextWithLines(docxDocument, formattedTexts, pageText);
           } else {
-            System.out.println("[PDFToDOCConverter] Sử dụng text thường (không có format)");
+            System.out.println("[PDFToDOCConverter] Using plain text (no format)");
             processPlainText(docxDocument, pageText);
           }
         }
@@ -88,16 +88,16 @@ public class PDFToDOCConverter {
       document.close();
 
       if (docxDocument.getParagraphs().isEmpty()) {
-        System.err.println("[PDFToDOCConverter] Cảnh báo: PDF không có text hoặc không thể trích xuất text!");
+        System.err.println("[PDFToDOCConverter] Warning: PDF has no text or cannot extract text!");
         XWPFParagraph paragraph = docxDocument.createParagraph();
         XWPFRun run = paragraph.createRun();
         run.setText(
-            "PDF này không chứa text có thể trích xuất được. Có thể PDF này chỉ chứa hình ảnh hoặc text đã được scan.");
+            "This PDF does not contain extractable text. This PDF may only contain images or scanned text.");
       }
 
-      System.out.println("[PDFToDOCConverter] Số paragraph đã tạo: " + docxDocument.getParagraphs().size());
+      System.out.println("[PDFToDOCConverter] Number of paragraphs created: " + docxDocument.getParagraphs().size());
       System.out.println(
-          "[PDFToDOCConverter] Format: " + (isSlideFormat ? "Slide (từng trang riêng biệt)" : "Document (liên tục)"));
+          "[PDFToDOCConverter] Format: " + (isSlideFormat ? "Slide (separate pages)" : "Document (continuous)"));
 
       FileOutputStream out = new FileOutputStream(docFilePath);
       docxDocument.write(out);
@@ -105,12 +105,12 @@ public class PDFToDOCConverter {
       out.close();
       docxDocument.close();
 
-      System.out.println("[PDFToDOCConverter] Đã tạo file DOCX thành công: " + docFilePath);
+      System.out.println("[PDFToDOCConverter] Successfully created DOCX file: " + docFilePath);
 
       return docFilePath;
 
     } catch (Exception e) {
-      System.err.println("[PDFToDOCConverter] Lỗi khi chuyển đổi: " + e.getMessage());
+      System.err.println("[PDFToDOCConverter] Error during conversion: " + e.getMessage());
       e.printStackTrace();
       return null;
     }

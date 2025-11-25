@@ -57,7 +57,7 @@ public class ConversionWorker implements Runnable {
       task.setErrorMessage("Lỗi: " + e.getMessage());
       task.setCompletedAt(new java.util.Date());
       taskDAO.updateTask(task);
-      System.err.println("[ConversionWorker] Lỗi khi xử lý task " + task.getId() + ": " + e.getMessage());
+      System.err.println("[ConversionWorker] Error processing task " + task.getId() + ": " + e.getMessage());
       e.printStackTrace();
     }
   }

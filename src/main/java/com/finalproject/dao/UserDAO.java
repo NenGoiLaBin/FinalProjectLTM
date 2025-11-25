@@ -11,7 +11,7 @@ public class UserDAO {
 
   public User authenticate(String username, String password) {
     if (username == null || password == null || username.trim().isEmpty() || password.trim().isEmpty()) {
-      System.out.println("[UserDAO] Username hoặc password rỗng!");
+      System.out.println("[UserDAO] Username or password is empty!");
       return null;
     }
 
@@ -30,16 +30,16 @@ public class UserDAO {
         user.setPassword(rs.getString("password"));
         user.setEmail(rs.getString("email"));
         user.setFullName(rs.getString("full_name"));
-        System.out.println("[UserDAO] Đăng nhập thành công: " + username);
+        System.out.println("[UserDAO] Login successful: " + username);
         return user;
       } else {
-        System.out.println("[UserDAO] Không tìm thấy user: " + username);
+        System.out.println("[UserDAO] User not found: " + username);
       }
     } catch (SQLException e) {
-      System.err.println("[UserDAO] Lỗi khi đăng nhập: " + e.getMessage());
+      System.err.println("[UserDAO] Error during login: " + e.getMessage());
       e.printStackTrace();
     } catch (Exception e) {
-      System.err.println("[UserDAO] Lỗi khác: " + e.getMessage());
+      System.err.println("[UserDAO] Other error: " + e.getMessage());
       e.printStackTrace();
     }
     return null;
@@ -62,7 +62,7 @@ public class UserDAO {
         return user;
       }
     } catch (SQLException e) {
-      System.err.println("[UserDAO] Lỗi khi lấy user theo ID: " + e.getMessage());
+      System.err.println("[UserDAO] Error getting user by ID: " + e.getMessage());
       e.printStackTrace();
     }
     return null;
@@ -80,7 +80,7 @@ public class UserDAO {
 
       return stmt.executeUpdate() > 0;
     } catch (SQLException e) {
-      System.err.println("[UserDAO] Lỗi khi đăng ký user: " + e.getMessage());
+      System.err.println("[UserDAO] Error registering user: " + e.getMessage());
       e.printStackTrace();
     }
     return false;

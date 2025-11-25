@@ -12,26 +12,26 @@ public class ApplicationListener implements ServletContextListener {
   @Override
   public void contextInitialized(ServletContextEvent sce) {
     try {
-      System.out.println("[ApplicationListener] Đang khởi tạo kết nối database...");
+      System.out.println("[ApplicationListener] Initializing database connection...");
       DatabaseConfig config = new DatabaseConfig(sce.getServletContext());
       DatabaseConnection.initialize(config);
-      System.out.println("[ApplicationListener] Kết nối database đã được khởi tạo!");
+      System.out.println("[ApplicationListener] Database connection initialized!");
 
       try {
         DatabaseConnection.getInstance().getConnection().close();
-        System.out.println("[ApplicationListener] Kiểm tra kết nối database thành công!");
+        System.out.println("[ApplicationListener] Database connection test successful!");
       } catch (Exception e) {
-        System.err.println("[ApplicationListener] Lỗi khi kiểm tra kết nối database: " + e.getMessage());
+        System.err.println("[ApplicationListener] Error testing database connection: " + e.getMessage());
         e.printStackTrace();
       }
 
-      System.out.println("[ApplicationListener] Đang khởi động conversion queue...");
+      System.out.println("[ApplicationListener] Starting conversion queue...");
       ConversionQueue.getInstance().startWorker();
-      System.out.println("[ApplicationListener] Conversion queue đã được khởi động!");
+      System.out.println("[ApplicationListener] Conversion queue started!");
 
-      System.out.println("[ApplicationListener] Ứng dụng đã được khởi tạo thành công!");
+      System.out.println("[ApplicationListener] Application initialized successfully!");
     } catch (Exception e) {
-      System.err.println("[ApplicationListener] Lỗi khi khởi tạo ứng dụng: " + e.getMessage());
+      System.err.println("[ApplicationListener] Error initializing application: " + e.getMessage());
       e.printStackTrace();
     }
   }
@@ -39,6 +39,6 @@ public class ApplicationListener implements ServletContextListener {
   @Override
   public void contextDestroyed(ServletContextEvent sce) {
     ConversionQueue.getInstance().stopWorker();
-    System.out.println("[ApplicationListener] Ứng dụng đã được dừng - Conversion queue đã dừng");
+    System.out.println("[ApplicationListener] Application stopped - Conversion queue stopped");
   }
 }

@@ -88,9 +88,9 @@ public class DownloadServlet extends HttpServlet {
 
     } catch (NumberFormatException e) {
       response.sendError(HttpServletResponse.SC_BAD_REQUEST, "ID tác vụ không hợp lệ");
-      System.err.println("[DownloadServlet] Lỗi khi parse task ID: " + e.getMessage());
+      System.err.println("[DownloadServlet] Error parsing task ID: " + e.getMessage());
     } catch (Exception e) {
-      System.err.println("[DownloadServlet] Lỗi khi tải file: " + e.getMessage());
+      System.err.println("[DownloadServlet] Error downloading file: " + e.getMessage());
       e.printStackTrace();
       response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Lỗi khi tải file");
     }

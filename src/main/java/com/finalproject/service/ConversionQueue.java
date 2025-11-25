@@ -41,7 +41,7 @@ public class ConversionQueue {
       queue.put(task);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      System.err.println("[ConversionQueue] Lỗi khi thêm task vào queue: " + e.getMessage());
+      System.err.println("[ConversionQueue] Error adding task to queue: " + e.getMessage());
       e.printStackTrace();
     }
   }

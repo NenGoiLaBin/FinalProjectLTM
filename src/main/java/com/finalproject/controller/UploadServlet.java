@@ -80,7 +80,7 @@ public class UploadServlet extends HttpServlet {
           }
         }
       } catch (Exception e) {
-        System.err.println("[UploadServlet] Lỗi khi upload file: " + e.getMessage());
+        System.err.println("[UploadServlet] Error uploading file: " + e.getMessage());
         e.printStackTrace();
         response.sendRedirect("tasks?message=upload_error");
       }
